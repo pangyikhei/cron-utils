@@ -39,4 +39,15 @@ public class CronParserCron4JIntegrationTest {
         String cronExpr = "* 1 5-2 * 4";
         cron4jParser.parse(cronExpr);
     }
+
+    @Test
+    public void testParseLastDayOfMonth() throws Exception {
+        String cronExpr = "* * L * *";
+    }
+
+    //@Test TODO issue 202
+    public void testParseSunday() throws Exception {
+        String cronExpr = "* * * * sun";
+        cron4jParser.parse(cronExpr);
+    }
 }
