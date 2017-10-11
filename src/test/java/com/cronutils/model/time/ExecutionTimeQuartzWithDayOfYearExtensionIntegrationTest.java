@@ -119,11 +119,6 @@ public class ExecutionTimeQuartzWithDayOfYearExtensionIntegrationTest {
 
         // Bi-weekly starting from Jan. 1
         LocalDate startDate = LocalDate.of(START_YEAR, 1, 1);
-        ZonedDateTime beginning = ZonedDateTime.of(startDate, LocalTime.MIN, TIME_ZONE_ID);
-        // Add all execution times for the year
-        for (int week = 0; week <= 52; week += 2) {
-            expectedExecutionTimes.add(beginning.plusWeeks(week));
-        }
 
         ExecutionTime executionTime = ExecutionTime.forCron(parser.parse(BI_WEEKLY_STARTING_WITH_FIRST_DAY_OF_YEAR));
 
