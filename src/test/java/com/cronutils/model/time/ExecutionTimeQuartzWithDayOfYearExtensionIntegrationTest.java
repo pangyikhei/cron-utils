@@ -12,6 +12,10 @@ import org.junit.Test;
 import org.threeten.bp.*;
 import org.threeten.bp.temporal.ChronoUnit;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+
 /*
  * Copyright 2015 jmrozanec
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -48,46 +52,94 @@ public class ExecutionTimeQuartzWithDayOfYearExtensionIntegrationTest {
         assertEquals(ExecutionTime.class, ExecutionTime.forCron(parser.parse(WITHOUT_SPECIFIC_DAY_OF_YEAR)).getClass());
     }
 
-    //@Test
+    /**
+     * Gets the expected execution times for a biweekly schedule starting from the first day of the year at midnight
+     * @param year The year to get the execution times for
+     * @param zoneId The time zone ID
+     * @return The expected execution times
+     */
+    private static List<ZonedDateTime> getBiweeklyExpectedExecutionTimesOfYear(int year, ZoneId zoneId){
+        List<ZonedDateTime> executionTimes = new ArrayList<>();
+        // Starting from the first day of the year
+        LocalDate startDate = LocalDate.of(year, 1, 1);
+        ZonedDateTime beginning = ZonedDateTime.of(startDate, LocalTime.MIN, zoneId);
+        // Add all execution times for the year
+        for (int week = 0; week <= 52; week += 2) {
+            executionTimes.add(beginning.plusWeeks(week));
+        }
+        return executionTimes;
+    }
+
+    @Test
     public void testNextExecutionEveryTwoWeeksStartingWithFirstDayOfYear() {
-        ZonedDateTime now = truncateToDays(ZonedDateTime.now());
-        int dayOfYear = now.getDayOfYear();
-        int dayOfMostRecentPeriod = dayOfYear % 14;
-        ZonedDateTime expected = now.plusDays(15-dayOfMostRecentPeriod);
+        final int START_YEAR = 2017;
+        final ZoneId TIME_ZONE_ID = ZoneId.systemDefault();
+        List<ZonedDateTime> expectedExecutionTimes = getBiweeklyExpectedExecutionTimesOfYear(START_YEAR, TIME_ZONE_ID);
+
+        LocalDate startDate = LocalDate.of(START_YEAR, 1, 1);
+        ZonedDateTime beginning = ZonedDateTime.of(startDate, LocalTime.MIN, TIME_ZONE_ID);
+
+        // Add first execution time of the next year - Jan 1.
+        // This should be the result if nextExecution is called on/after the last execution of this year
+        expectedExecutionTimes.add(ZonedDateTime.of(START_YEAR + 1, 1, 1, 0, 0, 0, 0, TIME_ZONE_ID));
+
         ExecutionTime executionTime = ExecutionTime.forCron(parser.parse(BI_WEEKLY_STARTING_WITH_FIRST_DAY_OF_YEAR));
-        assertEquals(expected, executionTime.nextExecution(now).get());
+
+        Iterator<ZonedDateTime> iterator = expectedExecutionTimes.iterator();
+        ZonedDateTime expected = iterator.next();
+        // Check the first execution time - Jan. 1
+        assert(executionTime.nextExecution(beginning.minusDays(1)).isPresent());
+        assertEquals(expected, executionTime.nextExecution(beginning.minusDays(1)).get());
+
+        // Check next execution times for all days in the year
+        for(int dayOfYear = 1; dayOfYear <= startDate.lengthOfYear(); dayOfYear++){
+            ZonedDateTime dayToTest = ZonedDateTime.of(LocalDate.ofYearDay(START_YEAR, dayOfYear), LocalTime.MIN, TIME_ZONE_ID);
+
+            // every 2 weeks take the next execution time
+            if (dayOfYear % 14 == 1 && iterator.hasNext()){
+                expected = iterator.next();
+            }
+            assert (executionTime.nextExecution(dayToTest).isPresent());
+            assertEquals(expected, executionTime.nextExecution(dayToTest).get());
+        }
     }
 
-    //@Test
-    public void testNextExecutionEveryTwoWeeksStartingWithFirstDayOfYearIssue249() {
-        ZonedDateTime now = truncateToDays(ZonedDateTime.now());
-        int dayOfYear = now.getDayOfYear();
-        int dayOfMostRecentPeriod = dayOfYear % 14;
-        ZonedDateTime expected = now.plusDays(15-dayOfMostRecentPeriod);
-        ExecutionTime executionTime = ExecutionTime.forCron(parser.parse(BI_WEEKLY_STARTING_WITH_FIRST_DAY_OF_YEAR));
-        assertEquals(expected, executionTime.nextExecution(now).get());
-    }
+    @Test
+    public void testLastExecutionEveryTwoWeeksStartingWithFirstDayOfYearIssue() {
+        final int START_YEAR = 2017;
+        final ZoneId TIME_ZONE_ID = ZoneId.systemDefault();
+        List<ZonedDateTime> expectedExecutionTimes = getBiweeklyExpectedExecutionTimesOfYear(START_YEAR, TIME_ZONE_ID);
 
-    //@Test
-    public void testLastExecutionEveryTwoWeeksStartingWithFirstDayOfYear() {
-        //s m H DoM M DoW Y DoY
-        ZonedDateTime now = truncateToDays(ZonedDateTime.of(2017, 10, 7, 0, 0, 0, 0, ZoneId.of("America/Argentina/Buenos_Aires")));
-        int dayOfYear = now.getDayOfYear();
-        int dayOfMostRecentPeriod = dayOfYear % 14;
-        ZonedDateTime expected = dayOfMostRecentPeriod == 1 ? now.minusDays(14) : now.minusDays(dayOfMostRecentPeriod-1);
-        ExecutionTime executionTime = ExecutionTime.forCron(parser.parse(BI_WEEKLY_STARTING_WITH_FIRST_DAY_OF_YEAR));
-        assertEquals(expected, executionTime.lastExecution(now).get());
-    }
+        // Add the last expected execution of the previous year - always the 365th day (52*7 = 364)
+        ZonedDateTime lastExecutionOfPreviousYear =
+                ZonedDateTime.of(LocalDate.ofYearDay(START_YEAR - 1, 365),
+                        LocalTime.MIN,
+                        TIME_ZONE_ID);
+        expectedExecutionTimes.add(0, lastExecutionOfPreviousYear);
 
-    //@Test
-    public void testLastExecutionEveryTwoWeeksStartingWithFirstDayOfYearIssue249() {
-        //s m H DoM M DoW Y DoY
-        ZonedDateTime now = truncateToDays(ZonedDateTime.of(2017, 10, 7, 0, 0, 0, 0, ZoneId.of("America/Argentina/Buenos_Aires")));
-        int dayOfYear = now.getDayOfYear();
-        int dayOfMostRecentPeriod = dayOfYear % 14;
-        ZonedDateTime expected = dayOfMostRecentPeriod == 1 ? now.minusDays(14) : now.minusDays(dayOfMostRecentPeriod-1);
+        // Bi-weekly starting from Jan. 1
+        LocalDate startDate = LocalDate.of(START_YEAR, 1, 1);
+        ZonedDateTime beginning = ZonedDateTime.of(startDate, LocalTime.MIN, TIME_ZONE_ID);
+        // Add all execution times for the year
+        for (int week = 0; week <= 52; week += 2) {
+            expectedExecutionTimes.add(beginning.plusWeeks(week));
+        }
+
         ExecutionTime executionTime = ExecutionTime.forCron(parser.parse(BI_WEEKLY_STARTING_WITH_FIRST_DAY_OF_YEAR));
-        assertEquals(expected, executionTime.lastExecution(now).get());
+
+        // Check last execution times for all days in the year
+        Iterator<ZonedDateTime> iterator = expectedExecutionTimes.iterator();
+        ZonedDateTime expected = iterator.next();
+        for(int dayOfYear = 1; dayOfYear <= startDate.lengthOfYear(); dayOfYear++){
+            ZonedDateTime dayToTest = ZonedDateTime.of(LocalDate.ofYearDay(START_YEAR, dayOfYear), LocalTime.MIN, TIME_ZONE_ID);
+            assert (executionTime.lastExecution(dayToTest).isPresent());
+            assertEquals(expected, executionTime.lastExecution(dayToTest).get());
+
+            // every 2 weeks take the next execution time
+            if (dayOfYear % 14 == 1 && iterator.hasNext()){
+                expected = iterator.next();
+            }
+        }
     }
     
     @Test
